@@ -13,6 +13,7 @@ from gi.repository import Gdk, GstVideo
 GObject.threads_init()
 from ctypes import *
 gstreamer = cdll.LoadLibrary("D:\Python33\Lib\site-packages\gtk\libgstreamer-1.0-0.dll")
+gdkwin32 = cdll.LoadLibrary('D:\Python33\Lib\site-packages\gtk\libgdk-3-0.dll')
 gstreamer.gst_init(None, None)
 filename = path.join(path.dirname(path.abspath(__file__)), 'MVI_5751.MOV')
 global uri
@@ -24,7 +25,7 @@ class Player(object):
         self.window = Gtk.Window()
         self.window.connect('destroy', self.quit)
         
-        self.window.set_default_size(800, 50)
+        self.window.set_default_size(800, 600)
         
         self.Hbox = Gtk.Box(orientation = Gtk.Orientation.HORIZONTAL, spacing = 2)
         self.drawingarea = Gtk.DrawingArea()
@@ -70,6 +71,7 @@ class Player(object):
         print("Create Gstreamer playbin")
         self.playbin = Gst.ElementFactory.make('playbin', None)
         self.audiosink = Gst.ElementFactory.make("waveformsink", None)
+        self.videosink = Gst.ElementFactory.make("cluttersink", None)
         # Add playbin to the pipeline
         self.pipeline.add(self.playbin)
         #self.pipeline.add(self.audiosink)
@@ -78,9 +80,11 @@ class Player(object):
         print("set property uri = " + uri)
         self.playbin.set_property('uri', uri)
         self.playbin.set_property('audio-sink', self.audiosink)
+        #self.playbin.set_property('video-sink', self.videosink)
     def play(self):
         print(self.pipeline)
         self.pipeline.set_state(Gst.State.PLAYING)
+        self.playbin.expose()
     
     def pause_cb(self, widget):
         self.pipeline.set_state(Gst.State.PAUSED)
@@ -124,7 +128,10 @@ class Player(object):
         # You need to get the XID after window.show_all().  You shouldn't get it
         # in the on_sync_message() handler because threading issues will cause
         # segfaults there.
-        self.xid = self.drawingarea.get_property('window')
+        self.win_id = gdkwin32.gdk_win32_window_get_handle(0x11194b0)
+        self.drawingarea.get_window().ensure_native()
+        print(self.drawingarea.get_property('window'))
+        print('win_id = ' + str(self.win_id))
         #for _attr in dir(Gdk.Window):
         #   if _attr.find('get') > 0 :
         #       print(_attr)
@@ -140,8 +147,9 @@ class Player(object):
     def on_sync_message(self, bus, msg):
         if msg.get_structure().get_name() == 'prepare-window-handle':
             print('prepare-window-handle')
-            msg.src.set_window_handle(self.xid)
-
+            #msg.src.set_window_handle(self.win_id)
+            msg.src.expose()
+            print(msg.src)
     def on_eos(self, bus, msg):
         print('on_eos(): seeking to start of video')
         self.pipeline.seek_simple(
