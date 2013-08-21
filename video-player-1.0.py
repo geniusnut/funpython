@@ -18,7 +18,7 @@ gstreamer.gst_init(None, None)
 filename = path.join(path.dirname(path.abspath(__file__)), 'MVI_5751.MOV')
 global uri
 uri = 'file:///E:/BUGs/samples/720x384.MP4'
-
+GST_SECONDS = 1000000
 
 class Player(object):
     def __init__(self):
@@ -31,7 +31,11 @@ class Player(object):
         self.drawingarea = Gtk.DrawingArea()
         #print(self.drwa)
         self.controls =  Gtk.Box(orientation = Gtk.Orientation.HORIZONTAL, spacing = 2)
-        self.ProgressBar = Gtk.ProgressBar()
+        self.slider = Gtk.HScale()
+        self.slider.set_range(0, 100)
+        self.slider.set_draw_value(0)
+        self.handler_id = self.slider.connect("value_changed", self.on_seek)
+        #print(self.slider.connect('format-value', self.scale_format_value_cb))
         self.timeout_id = GObject.timeout_add_seconds(1,self.on_timeout, None)
         btn_stop = Gtk.Button(stock=Gtk.STOCK_MEDIA_STOP)
         btn_stop.connect("clicked", self.stop_cb)
@@ -41,22 +45,31 @@ class Player(object):
         btn_play.connect("clicked", self.play_cb)
         btn_open = Gtk.Button(stock=Gtk.STOCK_OPEN)
         btn_open.connect("clicked", self.on_open_clicked)
+        self.hbox2 = Gtk.Box(orientation = Gtk.Orientation.HORIZONTAL, spacing = 5)
+        self.label_position = Gtk.Label('position: --:--')
+        self.hbox2.pack_start(self.label_position, False, False, 0)
+
+        self.label_duration = Gtk.Label('duration: --:--')
+        self.hbox2.pack_end(self.label_duration, False, False, 20)
+
+        
         self.controls.pack_start(btn_stop, False, False, 0)
         self.controls.pack_start(btn_play, False, False, 0)
         self.controls.pack_start(btn_pause, False, False, 0)
         self.controls.pack_start(btn_open, False, False, 0)
-        self.controls.pack_start(self.ProgressBar, True, True, 2)
+        self.controls.pack_start(self.slider, True, True, 2)
         
         
-        self.Hbox.pack_start(self.drawingarea, False, False, 0)
+        self.Hbox.pack_start(self.drawingarea, True, True, 0)
         self.mainbox = Gtk.Box(orientation = Gtk.Orientation.VERTICAL)
         self.mainbox.pack_start(self.Hbox, True, True, 0)
         self.mainbox.pack_start(self.controls, False, False, 0)
+        self.mainbox.pack_start(self.hbox2, False, False, 0)
         self.window.add(self.mainbox)
-        
+        self.duration = 0
+        self.position = 0
     def buildpipeline(self):
         self.pipeline = Gst.Pipeline()
-        print("buildpipeline" + uri)
         # Create bus to get events from GStreamer pipeline
         self.bus = self.pipeline.get_bus()
         self.bus.add_signal_watch()
@@ -68,7 +81,7 @@ class Player(object):
         self.bus.connect('sync-message::element', self.on_sync_message)
 
         # Create GStreamer elements
-        print("Create Gstreamer playbin")
+        #print("Create Gstreamer playbin")
         self.playbin = Gst.ElementFactory.make('playbin', None)
         self.audiosink = Gst.ElementFactory.make("waveformsink", None)
         self.videosink = Gst.ElementFactory.make("cluttersink", None)
@@ -77,12 +90,11 @@ class Player(object):
         #self.pipeline.add(self.audiosink)
         self.state = Gst.State.READY
         # Set properties
-        print("set property uri = " + uri)
+        #print("set property uri = " + uri)
         self.playbin.set_property('uri', uri)
         self.playbin.set_property('audio-sink', self.audiosink)
         #self.playbin.set_property('video-sink', self.videosink)
     def play(self):
-        print(self.pipeline)
         self.pipeline.set_state(Gst.State.PLAYING)
         self.playbin.expose()
     
@@ -95,10 +107,13 @@ class Player(object):
     def open_cb(self, uri):
         self.pipeline.set_state(Gst.State.NULL)
         Gst.Object.unref(self.pipeline)
-        self.duration = None
+        self.duration = 0
         self.position = None
         self.buildpipeline()
         self.play()
+    def on_seek(self, widget):
+        value =  Gtk.Range.get_value(self.slider)
+        Gst.Element.seek_simple(self.playbin, Gst.Format.TIME, Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT, value*Gst.MSECOND)
     def on_open_clicked(self, widget):
         dialog = Gtk.FileChooserDialog("Please choose a file", self.window,
             Gtk.FileChooserAction.OPEN,
@@ -109,7 +124,7 @@ class Player(object):
         if response == Gtk.ResponseType.OK:
             global uri
             uri = dialog.get_uri()
-            print("uri = "+ uri)
+            #print("uri = "+ uri)
             self.open_cb(uri)
         dialog.destroy()
     def add_filters(self, dialog):
@@ -130,8 +145,8 @@ class Player(object):
         # segfaults there.
         self.win_id = gdkwin32.gdk_win32_window_get_handle(0x11194b0)
         self.drawingarea.get_window().ensure_native()
-        print(self.drawingarea.get_property('window'))
-        print('win_id = ' + str(self.win_id))
+        #print(self.drawingarea.get_property('window'))
+        #print('win_id = ' + str(self.win_id))
         #for _attr in dir(Gdk.Window):
         #   if _attr.find('get') > 0 :
         #       print(_attr)
@@ -147,7 +162,7 @@ class Player(object):
     def on_sync_message(self, bus, msg):
         if msg.get_structure().get_name() == 'prepare-window-handle':
             print('prepare-window-handle')
-            #msg.src.set_window_handle(self.win_id)
+            msg.src.set_window_handle(self.win_id)
             msg.src.expose()
             print(msg.src)
     def on_eos(self, bus, msg):
@@ -173,13 +188,21 @@ class Player(object):
             return True
         else :
             duration = self.pipeline.query_duration(fmt)[1]
+            if duration != self.duration:
+                self.slider.set_range(0, duration/Gst.MSECOND)
+                self.duration = duration
+                self.label_duration.set_text('duration: %s' % self.format_time(self.duration))
             #print ( duration )
-            position = self.pipeline.query_position(fmt)[1]
-            if duration <= 0 :
-                val = 0
-            else :
-                val = position / duration
-            self.ProgressBar.set_fraction(val)
+            self.position = self.pipeline.query_position(fmt)[1]
+            #print(self.position)
+            self.slider.handler_block(self.handler_id)
+            self.slider.set_value(self.position/Gst.MSECOND)
+            self.slider.handler_unblock(self.handler_id)
+            self.label_position.set_text('position: %s' % self.format_time(self.position))
         return True
+    def format_time(self, value):
+        seconds = value / Gst.SECOND
+        return('%02d:%02d:%02d' % (seconds//3600, seconds//60 % 60 , seconds %60))
+    
 p = Player()
 p.run()
