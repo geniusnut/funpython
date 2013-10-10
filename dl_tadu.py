@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-  iook['author'] = 
 # vim:fileencoding=utf-8
 
 import sys
@@ -17,30 +16,38 @@ def getBookInfo(str):
   print("作者:", book['author'])
   def getlink(a):
     link = a.get('href')
-    return ("")
+    return ("http://www.tadu.com"+link)
   book['links'] = list(map(getlink, html.cssselect('a[href^="/book/366292"]')))
+  print("共 %d 页" % len(book['links']))
+  return book
 def geturl(url):
   response = urllib.request.urlopen(url)
   return response.read().decode()
 
 def getpage(url, f, count):
-  html = geturl()
+  html = geturl(url)
   html = lxml.html.fromstring(html)
-  title = html.cssselect('head')[0][1].text
+  title = html.cssselect('h2')[0].text
+  
+  print('第 %d 页（%s）已下载' % (count, title))
   patt = '(%\w+)+'
+  f.write(title + '\n\n')
   content = html.cssselect('script')[7].text
   content = re.search(patt, content).group()
   #print(content)
+  content = content.replace('%3Cbr%2F%3E%3Cbr%2F%3E','\n')
   content = content.replace('%','\\').encode()
   content = content.decode('unicode_escape')
+  f.write(content + '\n')
   
 def dl(url):
   book = getBookInfo(geturl(url))
   fname = book['title']
-  
-  with open('a.txt', 'w') as f:
-    f.write(title) 
-    f.write(content)
+  fname += '.txt' 
+  with open(fname, 'w') as f: 
+    for i, l in enumerate(book['links'][1::]):
+      getpage(l, f, i+1)
+  print('下载完成！') 
 if  __name__== '__main__':
   if len(sys.argv) == 2:
     url = sys.argv[1]
